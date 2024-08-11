@@ -5,10 +5,18 @@ const cookieParser = require('cookie-parser');
 const cors = require('cors');
 const bodyParser = require('body-parser')
 
-const dotenv = require('dotenv');
-dotenv.config({ path: './.env' });
+const multer = require("multer")
+const excelToJson = require("convert-excel-to-json")
+const fs = require("fs-extra")
+let upload = multer({ dest: "uploads/" })
+
+const { default: dotenv } = require('../dotenv');
 
 const jwt = require('jsonwebtoken');
+const { connectDb } = require('../db');
+const { userModel } = require('../userModel');
+const { getUser, createUser, getAllUsers } = require('../userFunctions');
+const { getResultSets, getResult, getResultSet, addResults } = require('../resultFunctions');
 
 const JWT_SECRET = process.env.JWT_SECRET
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET
@@ -42,48 +50,51 @@ const capitalize = (string) => {
 
 }
 
-let users = [
-    {
-        id: 0,
-        username: 'super',
-        email: 'venu@gmail.com',
-        password: 'venu@gmail.com',
-        role: 'super'
-    },
-    {
-        id: 1,
-        username: 'harun',
-        email: 'harun@gmail.com',
-        password: 'harun@gmail.com',
-        role: 'admin'
-    },
-    {
-        id: 2,
-        username: 'Charan',
-        email: 'charan@gmail.com',
-        password: 'charan@gmail.com',
-        role: 'admin'
-    },
+connectDb()
 
-    {
-        id: 3,
-        username: 'Ramesh',
-        email: 'ramesh@gmail.com',
-        password: 'ramesh@gmail.com',
-        role: 'user'
-    },
-    {
-        id: 4,
-        username: 'Raani',
-        email: 'rani@gmail.com',
-        password: 'rani@gmail.com',
-        role: 'user'
-    }
-]
+// let users = [
+//     {
+//         id: 0,
+//         username: 'super',
+//         email: 'venu@gmail.com',
+//         password: 'venu@gmail.com',
+//         role: 'super'
+//     },
+//     {
+//         id: 1,
+//         username: 'harun',
+//         email: 'harun@gmail.com',
+//         password: 'harun@gmail.com',
+//         role: 'admin'
+//     },
+//     {
+//         id: 2,
+//         username: 'Charan',
+//         email: 'charan@gmail.com',
+//         password: 'charan@gmail.com',
+//         role: 'admin'
+//     },
+
+//     {
+//         id: 3,
+//         username: 'Ramesh',
+//         email: 'ramesh@gmail.com',
+//         password: 'ramesh@gmail.com',
+//         role: 'user'
+//     },
+//     {
+//         id: 4,
+//         username: 'Raani',
+//         email: 'rani@gmail.com',
+//         password: 'rani@gmail.com',
+//         role: 'user'
+//     }
+// ]
 
 
 
 //generate New Access Token
+
 const generateAccessToken = (user) => {
     return jwt.sign(user, JWT_SECRET, { expiresIn: "10m" });
 }
@@ -101,10 +112,9 @@ let accessTokenHolder = ""
 const generateRefreshToken = (user) => {
     return jwt.sign(user, JWT_REFRESH_SECRET)
 }
-// console.log("refresh tokens are: ______________________", refreshTokens)
-// console.log("refresh tokens are: ______________________")
-//register route
-app.post('/api/register', (req, res) => {
+
+//to register 
+app.post('/api/register', async (req, res) => {
 
     let { username, email, password } = req.body;
 
@@ -115,10 +125,10 @@ app.post('/api/register', (req, res) => {
     email = email.toLowerCase()
     username = capitalize(username)
 
-    const result = users.find(user => user.email === email);
-    console.log("result user: ", result)
+    const userCheck = await getUser(email)
+    console.log("userCheck: ", userCheck)
 
-    if (!result) {
+    if (!userCheck.length) {
 
         const role = 'user'
 
@@ -128,26 +138,29 @@ app.post('/api/register', (req, res) => {
 
         console.log("accessToken: ", accessToken)
 
-        users.push({
-            id: users.length,
-            username,
-            email,
-            password,
-            role
+        return await createUser({ username, email, password, role }).then(() => {
+
+            accessTokenHolder = accessToken
+            refreshTokens.push(refreshToken)
+
+
+            console.log("user registered successfully")
+
+            return res.status(200).json({
+                msg: "User Registered Successfully",
+                accessToken: accessTokenHolder,
+                refreshToken: refreshToken
+            })
+
+        }).catch((err) => {
+            console.log("Err in registering user: ", err)
+            return res.json(
+                { msg: 'Err in registering the user' }
+            )
         })
 
-        accessTokenHolder = accessToken
-        refreshTokens.push(refreshToken)
 
-        res.status(200)
-
-        return res.json({
-            msg: "User Registered Successfully",
-            accessToken: accessTokenHolder,
-            refreshToken: refreshToken
-        })
-
-    } else if (result.email === email) {
+    } else if (userCheck[0].email === email) {
 
         return res.status(200).json({
             msg: "User Already Exists, please Login"
@@ -158,29 +171,28 @@ app.post('/api/register', (req, res) => {
     return res.status(200).json({ msg: "Something went wrong" })
 })
 
-//login router
-app.post('/api/login', (req, res) => {
+//to login 
+app.post('/api/login', async (req, res) => {
 
     let { email, password } = req.body;
-    email = email.toLowerCase()
+    email = email?.toLowerCase()
 
-    // console.log("sessionid: ",req.sessionID);
 
     if (!email || !password) {
         return res.status(200).json({ msg: "Enter all the required fields" });
     }
 
-    const result = users.find(user => user.email === email);
-    console.log("result user: ", result)
+    const checkUser = await getUser(email)
+    console.log("check user: ", checkUser)
 
-    if (!result) {
+    if (!checkUser.length) {
 
         return res.status(200).json({ msg: "User not found in the Database, please Register" })
 
-    } else if (result.email === email && result.password === password) {
+    } else if (checkUser[0].email === email && checkUser[0].password === password) {
 
-        let role = result.role
-        let username = result.username
+        let role = checkUser[0].role
+        let username = checkUser[0].username
 
         let accessToken = generateAccessToken({ username, email, role });
         let refreshToken = generateRefreshToken({ username, email, role });
@@ -188,9 +200,7 @@ app.post('/api/login', (req, res) => {
         accessTokenHolder = accessToken
         refreshTokens.push(refreshToken)
 
-        res.status(200)
-
-        return res.json({
+        return res.status(200).json({
             msg: "User Logged Successfully",
             accessToken: accessTokenHolder,
             refreshToken: refreshToken
@@ -222,7 +232,7 @@ const verifyToken = (req, res, next) => {
                 next()
             })
             if (user === "Token Expired") {
-                return res.json({ status: "error", msg: "Token Expired" })
+                return res.json({ msg: "Token Expired" })
             }
 
         } else {
@@ -235,6 +245,15 @@ const verifyToken = (req, res, next) => {
 
         return res.status(200).json({ msg: "You are not authenticated" });
 
+    }
+}
+
+const verifyNonNormalUser = (req, res, next) => {
+    console.log("req.user.role", req.user.role)
+    if (req.user.role !== 'user') {
+        next()
+    } else {
+        return res.status(200).json({ msg: "You are not an authorised user" })
     }
 }
 
@@ -283,15 +302,149 @@ app.post('/api/refresh', (req, res) => {
     })
 })
 
-app.get('/api/users', verifyToken, (req, res) => {
+let resultsData = []
+let resultSets = []
+// app.post('/api/results', verifyToken, verifyNonNormalUser, (req, res) => {
+//     console.log("req:", req.body, req.files)
+//     return res.json("details sent")
+// })
+app.post('/api/results', verifyToken, verifyNonNormalUser, upload.single("file"), async (req, res) => {
 
-    // users.forEach((user)=>{
-    //     console.log("user_email: ",user.email)
-    // })
-    console.log("Do some function______")
+    try {
 
+        console.log("req.files: ", req.file)
+        let { title, subjects } = req.body
+        console.log("title: ", title)
+        console.log("subjects: ", subjects)
+        subjects = subjects.split(',')
+        console.log("subjects: ", subjects)
+        if (req.file?.filename == null || req.file?.filename == "undefined") {
+            res.status(400).json("No file")
+        } else {
+            var filePath = "uploads/" + req.file.filename;
+            let date = new Date()
+            const month = date.toLocaleString('en-US', { month: 'short' })
+            const day = ('' + date.getDate()).padStart(2, '0')
+            const year = date.getFullYear()
+            const formatedDate = `${day}-${month}-${year}`
+            console.log("date: ", date, month, day, year)
+            console.log("subjects: ", subjects)
+            const excelData = excelToJson({
+                sourceFile: filePath,
+                header: {
+                    rows: 1,
+                },
+                columnToKey: {
+                    "*": "{{columnHeader}}",
+                },
+            })
+            console.log('after excel data decl');
 
+            excelData['resultTitle'] = title
+            console.log('after excel data decl');
+            // excelData['resultSetId'] = resultsData.length
+            excelData['subjects'] = subjects
+            console.log('after excel data decl');
+            excelData['uploadDate'] = formatedDate
+            console.log('after excel data decl');
+
+            excelData['Sheet1'].forEach((result) => {
+                result['marks'] = []
+                excelData['subjects'].forEach((subject) => {
+                    result['marks'].push(result[subject])
+                    delete result['S.No']
+                    delete result[subject]
+                })
+            })
+            console.log('after excel data decl');
+
+            // resultsData[0]['Sheet1'].find((stu) => stu['ROLL NO'] === '218P1A05D2')
+
+            // let resultSetsItem = {
+            //     resultTitle: title,
+            //     resultId: resultsData.length,
+            //     resultDate: formatedDate,
+            // }
+
+            // console.log("check 1")
+            // resultSets.push(resultSetsItem)
+            // console.log("check 2")
+
+            // excelData['Max Marks'] = maxMarks
+            // excelData['Sheet1'].forEach((result) => {
+            //     let total = 0
+            //     subjects.forEach((subject) => {
+            //         total += result[subject]
+            //     })
+            //     result['TOTAL'] = total
+
+            //     result['PERCENTAGE'] = Math.round((((total / parseInt(maxMarks)) * 100) + Number.EPSILON) * 100) / 100
+            // })
+            // console.log("check 3")
+            // resultsData.push(excelData)
+            console.log("excelData: ", excelData)
+            return await addResults(excelData).then(() => {
+
+                fs.remove(filePath);
+                return res.status(200).json({ msg: 'results uploaded successfully' })
+
+            }).catch((err) => {
+                console.log("Err in uploading results: ", err)
+            })
+        }
+
+    } catch (err) {
+        return res.status(500).json(err)
+    }
+
+})
+
+app.get('/api/results', async (req, res) => {
+    console.log("in this 0")
+    const resultSets = await getResultSets()
+    if (resultSets.length) {
+        console.log("in this 1")
+        return res.json(resultSets)
+    } else {
+        console.log("in this 2")
+        return res.json({ msg: 'No Results Found' })
+    }
+})
+
+app.post('/api/result/:resultSetId', async (req, res) => {
+    let { regNo } = req.body;
+    let resultSetId = req.params.resultSetId
+
+    console.log("in this", regNo, req.params.resultSetId)
+
+    if (!regNo) return res.json({ msg: "Enter the regNo" })
+
+    regNo = regNo?.toUpperCase()
+
+    const resultSet = await getResultSet(resultSetId)
+
+    if (resultSet.length) {
+        const results = resultSet[0]['Sheet1']
+        console.log("results: ", results)
+
+        const foundResult = results.find((result) => {
+            return result['Reg No'] === regNo
+        })
+
+        if (foundResult !== undefined) {
+            console.log('foundResult: ', foundResult, regNo)
+            return res.json({ result: foundResult, subjects: resultSet[0]['subjects'] })
+        }
+    }
+
+    return res.json("No results found")
+})
+
+app.get('/api/users', verifyToken, async (req, res) => {
+
+    const users = await getAllUsers()
     return res.status(200).json({ msg: "Token Working", users })
+
 })
 
 app.post("/api/user/create", verifyToken, verifySuper, (req, res) => {

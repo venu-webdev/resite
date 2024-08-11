@@ -3,10 +3,35 @@ import navlinks from "../../navlinks";
 import { NavLink, Route, Routes } from "react-router-dom";
 import Dashboardpage from "../pages/Dashboardpage";
 import ProfilePage from "../pages/ProfilePage";
+import UploadResultsPage from "../pages/UploadResultsPage";
+import Homepage from "../pages/Homepage";
+import MissingPage from "./../pages/MissingPage";
 
 export const RenderRoutes = () => {
-  const { user } = AuthData();
-
+  const {
+    user,
+    getAccessToken,
+    setNewTokenInterval,
+    getNewTokens,
+    isValidToken,
+  } = AuthData();
+  const renderTokenRoutes = () => {
+    return (
+      <>
+        <Route path={"dashboard"} element={<Dashboardpage />}></Route>
+        <Route
+          path={"dashboard/uploadResults"}
+          element={<UploadResultsPage />}
+        ></Route>
+      </>
+    );
+  };
+  // if (user.isAuthenticated) {
+  //   setNewTokenInterval();
+  // }
+  // const renderTokenRoutesWithNewTokens = () => {
+  //   return renderTokenRoutes();
+  // };
   return (
     <Routes>
       {navlinks.map((r, i) => {
@@ -17,7 +42,11 @@ export const RenderRoutes = () => {
       {user.isAuthenticated ? (
         user.role === "admin" || user.role === "super" ? (
           <>
-            <Route path={"dashboard"} element={<Dashboardpage />} />
+            {true ? (
+              renderTokenRoutes()
+            ) : (
+              <Route path={"*"} element={<MissingPage />} />
+            )}
             <Route path={"profile"} element={<ProfilePage />} />
           </>
         ) : (
@@ -41,8 +70,8 @@ export const RenderMenu = () => {
     );
   };
   return (
-    <div className="flex justify-between p-4">
-      <div>Resite</div>
+    <div className="flex max-w-5xl m-auto justify-between p-4 items-center">
+      <div className="text-3xl font-semibold tracking-tighter">Resite</div>
       <div className="flex gap-5">
         {navlinks.map((r, i) => {
           if (!r.isPrivate && r.isMenu) {
