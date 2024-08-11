@@ -164,7 +164,7 @@ const ResultTable = ({ result, subjects }) => {
         <div className="text-xs">
           Name:{" "}
           <div className="text-base text-green-700 font-semibold">
-            {result["Name"]}
+            {result["NAME"]}
           </div>
         </div>
       </div>
@@ -205,7 +205,7 @@ const ResultTable = ({ result, subjects }) => {
                             {result["TOTAL"]}
                           </td>
                           <td className="font-medium" rowSpan={subjects.length}>
-                            {result["%"]}%
+                            {result["PERCENT"]}%
                           </td>
                         </>
                       ) : (
